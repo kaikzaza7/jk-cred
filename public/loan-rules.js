@@ -1,21 +1,26 @@
 /* JK CRED — loan-rules.js: ÚNICA fonte da regra de cálculo no front-end.
    Regra: encargo inicial de 30% + R$ 10,00 fixos por parcela adicional após a primeira.
    Tudo em centavos inteiros para evitar erro de ponto flutuante.
-   O backend (supabase/002_loan_rules.sql) repete a regra e é quem vale; este arquivo só exibe/simula. */
+   O backend (supabase/migrations/003_loans.sql) confirma a regra; este arquivo só exibe/simula. */
 (function (root) {
   const CHARGE_RATE_PERCENT = 30;      // acréscimo inicial
   const EXTRA_INSTALLMENT_FEE = 1000;  // centavos (R$ 10,00) por parcela após a primeira
 
-  function calcLoan(amount, installments) {
+  function calcLoan(amount, installments, rules = {}) {
     const n = Number(installments);
     const x = Number(amount) * 100;
     const cents = Math.round(x);
-    if (!Number.isFinite(x) || cents < 1 || Math.abs(x - cents) > 1e-6) throw new Error('Valor solicitado inválido.');
+    if (!Number.isSafeInteger(cents) || cents < 1 || Math.abs(x - cents) > 1e-6) throw new Error('Valor solicitado inválido.');
     if (!Number.isInteger(n) || n < 1) throw new Error('Quantidade de parcelas inválida.');
 
-    const charge = Math.round(cents * CHARGE_RATE_PERCENT / 100);   // encargo inicial
-    const installmentFee = (n - 1) * EXTRA_INSTALLMENT_FEE;         // adicional de parcelamento
+    const rate = Number(rules.chargePercent ?? CHARGE_RATE_PERCENT);
+    const fee = Number(rules.extraInstallmentFee ?? EXTRA_INSTALLMENT_FEE / 100);
+    const feeCents = Math.round(fee * 100);
+    if (!Number.isFinite(rate) || rate < 0 || !Number.isSafeInteger(feeCents) || feeCents < 0 || Math.abs(fee * 100 - feeCents) > 1e-6) throw new Error('Regras de cálculo inválidas.');
+    const charge = Math.round(cents * rate / 100);   // encargo inicial
+    const installmentFee = (n - 1) * feeCents;         // adicional de parcelamento
     const total = cents + charge + installmentFee;                  // valor total
+    if (!Number.isSafeInteger(total)) throw new Error('Valor solicitado inválido.');
     const base = Math.floor(total / n);                             // parcela
     const last = total - base * (n - 1);                            // última absorve os centavos
     const r = c => c / 100;

@@ -1,227 +1,112 @@
-# JK CRED — App de Empréstimo
+# JK CRED
 
-Sistema completo de gestão de crédito: cadastro, login, solicitação de empréstimos, painel administrativo.
+Aplicação estática para cadastro, autenticação e controle de solicitações de crédito.
+Vanilla JavaScript, Supabase Auth/PostgreSQL/Edge Function e hospedagem Netlify.
 
-**Stack:** Vanilla JS (SPA) + Supabase (Auth, Database, Edge Functions) + Netlify (Hosting)
+## Executar localmente
 
----
+Requer Node.js 20 ou superior.
 
-## 📁 Estrutura do Projeto
-
-```
-jk-cred/
-├── .github/workflows/          # CI/CD (futuro)
-├── supabase/
-│   ├── functions/
-│   │   └── acesso-cliente/     # Edge Function: login/recuperação por telefone
-│   └── migrations/             # SQL migrations (rodar em ordem)
-│       ├── 001_schema.sql      # Tabelas, RLS, triggers, admin_users
-│       ├── 002_loan_rules.sql  # Função calc_loan (legacy)
-│       ├── 003_loans.sql       # loan_settings, loan_requests, create_loan_request
-│       └── 004_update_trigger_and_admin.sql  # Trigger anti-race + admin
-├── public/                     # Frontend estático (Netlify publish dir)
-│   ├── index.html              # SPA: landing, login, dashboards
-│   ├── config.js               # Config Supabase (chaves públicas)
-│   ├── auth.js                 # Lógica auth: cadastro, login, sessão
-│   ├── loan-rules.js           # Cálculo empréstimo (front-end)
-│   ├── loan-rules.test.js      # Testes unitários cálculo
-│   └── test-auth.js            # Testes integração Edge Function
-├── netlify.toml                # Config Netlify (headers, redirects)
-├── package.json                # Scripts de teste/deploy
-├── .gitignore
-└── README.md
+```sh
+npm ci
+npm run dev
 ```
 
----
+Abra http://127.0.0.1:4173. O servidor entrega somente `public/`, em loopback.
+A prévia usa o projeto Supabase configurado em `public/config.js`; não é um banco
+local. Configure ali apenas URL e chave pública `anon`/publishable, nunca segredo
+ou `service_role`. Variáveis do painel Netlify não alteram automaticamente esse
+arquivo estático. O `netlify.toml` publica a pasta `public`.
 
-## 🚀 Setup Local
+## Organização
 
-### Pré-requisitos
-- Node.js 18+
-- Supabase CLI: `npm i -g supabase`
-- Netlify CLI: `npm i -g netlify-cli`
+- `public/app.js`: rotas, telas, eventos e carregamento, com controle de respostas atrasadas.
+- `public/auth.js`: sessão, identidade verificada, papel admin por RPC, login/cadastro/recuperação.
+- `public/repository.js`: consultas e gravações reais por API/RPC.
+- `public/errors.js`: mensagens seguras, timeout, bloqueio de envio duplicado e recuperação de erros.
+- `public/loan-rules.js`: cálculo em centavos com regras recebidas do servidor.
+- `supabase/functions/acesso-cliente/`: login/recuperação por telefone, limite de tentativas e respostas HTTP.
+- `supabase/migrations/`: fontes SQL para schema, RLS e operações atômicas.
+- `tests/`: testes de módulos e PostgreSQL descartável com PGlite.
 
-### 1. Clone e configure
-```bash
-git clone <seu-repo>
-cd jk-cred
-npm install  # só para scripts, sem dependências de produção
+## Preparar o Supabase
+
+Para um projeto novo, execute no SQL Editor, em ordem:
+
+1. `001_schema.sql`
+2. `003_loans.sql` (substitui a regra antiga de `002`)
+3. `004_update_trigger_and_admin.sql`
+4. `005_payments_and_control.sql`
+5. `20261013103750_atomic_loan_operations.sql`
+
+Em um projeto existente com 001/003/004/005 aplicadas, revise e aplique somente a
+nova migration incremental. Ela preserva registros e adiciona checagem de
+idempotência, transições de status, auditoria e validação atômica de pagamentos.
+Os nomes antigos são scripts legados, não uma instalação nova validada pelo
+histórico da CLI. A migration nova foi criada como fonte porque a CLI não estava
+disponível. Não foi aplicada ao projeto remoto.
+
+Crie administradores explicitamente pelo backend/SQL depois de cadastrar a conta
+no Supabase Auth. O script não promove automaticamente um email. Uma conta admin
+pode não ter perfil de cliente; seu login é por email. Cliente entra por telefone.
+O papel sempre vem de `is_admin()`, nunca dos metadados editáveis do usuário.
+
+Deploy da função, com Supabase CLI configurada:
+
+```sh
+supabase functions deploy acesso-cliente --project-ref SEU_PROJECT_REF
 ```
 
-### 2. Variáveis de ambiente
-Crie `.env.local` na raiz:
-```env
-SUPABASE_URL=https://SEU_PROJECT.supabase.co
-SUPABASE_ANON_KEY=sua_anon_key
-SUPABASE_SERVICE_ROLE_KEY=sua_service_role_key
-SITE_URL=http://localhost:8888
+O endpoint de login/recuperação deve aceitar requests antes da autenticação,
+conforme a configuração de verificação JWT do ambiente. Configure `SITE_URL` na
+função para o endereço permitido da aplicação e permita esse endereço nos
+redirects do Supabase Auth. O backend define a rota de recuperação; não encaminha
+um redirect arbitrário vindo do navegador. A chave de serviço fica só no backend.
+
+## Sessão e persistência
+
+O SDK guarda a sessão em `sessionStorage`: sobrevive ao recarregamento da aba,
+mas não se destina a permanecer após fechá-la. Os dados de empréstimos e pagamentos
+ficam no PostgreSQL. O frontend não cria protocolo ou confirmação fictícios.
+
+Solicitações, pagamentos e mudanças de status usam chave de envio. O navegador
+preserva a chave pendente para repetir a mesma operação após uma resposta incerta;
+a checagem definitiva acontece no servidor. Gravações não têm retry automático.
+
+O dashboard exibe uma amostra recente de até 100 solicitações e informa esse
+limite; ainda não há paginação completa ou relatório financeiro consolidado.
+Formalização, transferência bancária e cobrança/WhatsApp permanecem pendentes.
+Marcar um empréstimo como liberado é um registro de controle, não uma transferência.
+Os textos de consentimento continuam em rascunho e precisam de documentos finais
+antes do uso público.
+
+## Verificar
+
+```sh
+npm test
+npm run lint
+npm run test:db
 ```
 
-### 3. Supabase (Banco + Edge Function)
-```bash
-# Link do projeto
-supabase link --project-ref SEU_PROJECT_REF
+`npm test` inclui autenticação simulada, rotas, repositório, tratamento de falhas,
+backend, cálculo, servidor estático e SQL. O teste SQL usa PostgreSQL/PGlite
+isolado, com identidades e dados sintéticos, e reabre o armazenamento para
+verificar persistência. Não escreve no Supabase remoto.
 
-# Rode as migrations no SQL Editor do Dashboard (em ordem):
-# 1. supabase/migrations/001_schema.sql
-# 2. supabase/migrations/003_loans.sql
-# 3. supabase/migrations/004_update_trigger_and_admin.sql
+`npm run test:auth` é um teste legado de integração que depende de endpoint real;
+não faz parte da suíte offline. Foi movido de `public/` para `scripts/test-auth.mjs` e exige `TEST_BASE`, `TEST_PHONE` e `TEST_PASSWORD` de uma conta descartável de homologação. Ele consome tentativas; `TEST_ANON_KEY` permite informar a chave pública do gateway e `TEST_RECOVERY=1` inclui recuperação por e-mail. Não o execute com contas de produção para teste.
+Veja [ERROR-HANDLING.md](ERROR-HANDLING.md) para os padrões de novas funcionalidades.
 
-# Crie o 1º admin (após criar user no Auth):
-# INSERT INTO public.admin_users (user_id) SELECT id FROM auth.users WHERE email = 'seu@email.com';
+## Segurança adicional e visual
 
-# Deploy Edge Function
-supabase functions deploy acesso-cliente
-# No Dashboard: Functions → acesso-cliente → Settings → Require authentication = OFF
-# Adicione env var: SITE_URL = https://seu-app.netlify.app
-```
+O CSS foi extraído para `public/styles.css` e os componentes foram refinados com a identidade azul da JK CRED, contrastes dark/light e grids responsivos. O SDK agora é local, em `public/vendor/`.
 
-### 4. Frontend Local
-```bash
-# Terminal 1: Edge Function local
-supabase functions serve acesso-cliente --env-file .env.local
+Consulte [SECURITY.md](SECURITY.md) para as camadas implementadas, limites e sequência de deploy. A migração `20261013180000_auth_rate_limit.sql` deve entrar antes da Edge Function atualizada; configurar as origens permitidas antes de publicar.
 
-# Terminal 2: Frontend (Netlify dev)
-netlify dev
-# Acesse: http://localhost:8888
-```
+## Teste de amarração local
 
----
+`npm test` inclui `tests/request-flow.test.mjs`: repositório do aplicativo → HTTP local → SQL/RLS reais → leitura administrativa → aprovação → nova leitura do cliente → pagamento → repetição sem duplicação. Também verifica que outro cliente não lê o pedido e que cliente comum não aprova.
 
-## 🧪 Testes
+Para repetir no navegador, execute `npm run lab` e abra os links de cliente/administrador impressos no terminal. Esse laboratório escuta apenas em loopback, aplica as migrações em um PostgreSQL/PGlite temporário e usa identidades fictícias. O adaptador substitui o Supabase SDK/servidor de autenticação nesse teste; não valida Supabase Auth, PostgREST nem deploy remoto. O laboratório não envia dinheiro ou solicitações para o Supabase. Encerre com Ctrl+C; o banco de teste é descartado. Os arquivos de laboratório ficam em `scripts/`, fora da pasta publicada.
 
-```bash
-# Testes de autenticação (precisa da function deployada)
-TEST_BASE=https://SEU_PROJECT.supabase.co/functions/v1/acesso-cliente \
-ANON_KEY=sua_anon_key \
-node public/test-auth.js
-
-# Testes unitários cálculo empréstimo
-node public/loan-rules.test.js
-```
-
----
-
-## 🌐 Deploy Produção
-
-### Netlify
-1. Conecte repo no Netlify Dashboard
-2. Build command: (vazio)
-3. Publish directory: `public`
-4. Environment variables:
-   - `SUPABASE_URL`
-   - `SUPABASE_ANON_KEY`
-
-### Supabase
-- Edge Function já deployada via CLI
-- `SITE_URL` = URL do Netlify (ex: `https://jkcred.netlify.app`)
-
----
-
-## 🔐 Autenticação (Edge Function: `acesso-cliente`)
-
-| Endpoint | Método | Body | Descrição |
-|----------|--------|------|-----------|
-| Login | POST | `{action:"login", phone:"79999999999", password:"..."}` | Retorna session tokens |
-| Recuperar senha | POST | `{action:"recuperar", phone:"79999999999"}` | Envia link por email |
-
-**Segurança:**
-- Rate limiting: 5 login/15min por telefone, 30/IP; 3 recuperar/hora
-- Validação telefone: regex DDD + 8/9 dígitos
-- Senha gerenciada pelo Supabase Auth (hash bcrypt)
-- Respostas idênticas para usuário existente/inexistente (não revela existência)
-
----
-
-## 💰 Regra de Empréstimo
-
-**Fórmula (servidor = fonte da verdade):**
-- Encargo inicial: **30%** sobre o valor
-- Adicional parcelamento: **R$ 10,00** por parcela após a 1ª
-- Tudo calculado em centavos (inteiros) → sem erro de ponto flutuante
-
-**Exemplo:** R$ 1.000,00 em 3x
-- Encargo: R$ 300,00 (30%)
-- Adicional: R$ 20,00 (2 parcelas × R$ 10)
-- Total: R$ 1.320,00
-- Parcelas: 3 × R$ 440,00
-
-**Arquivos:**
-- Frontend: `public/loan-rules.js` (simulação)
-- Backend: `supabase/migrations/003_loans.sql` → `loan_calc()`, `create_loan_request()`
-
----
-
-## 🗄️ Banco de Dados (Principais Tabelas)
-
-| Tabela | Descrição |
-|--------|-----------|
-| `profiles` | Dados do cliente (CPF, telefone, endereço, cartão) |
-| `admin_users` | Usuários administradores (FK auth.users) |
-| `loan_settings` | Regras configuráveis (valores, parcelas, juros) |
-| `loan_requests` | Solicitações de empréstimo (status, valores calculados) |
-| `auth_attempts` | Controle de tentativas login/recuperar (hashes) |
-| `consent_log` | Log de aceite termos/privacidade |
-
-**RLS (Row Level Security):**
-- Cliente: lê/edita próprio perfil, lê próprias solicitações
-- Admin: lê tudo, altera status solicitações
-- Service Role (Edge Function): acesso total (ignora RLS)
-
----
-
-## 📱 Fluxos Principais
-
-### Cadastro Cliente
-1. `/cliente/cadastro` → preenche dados + aceite termos
-2. `supabase.auth.signUp()` com metadados → trigger cria `profile`
-3. Email confirmação → link para `/redefinir-senha`
-4. Define senha → login automático → dashboard
-
-### Login
-1. `/cliente/login` → telefone + senha
-2. Edge Function valida telefone → busca email no profile
-3. `signInWithPassword(email, password)` → session tokens
-4. Rate limit: 5 tentativas/15min
-
-### Solicitar Empréstimo (próxima feature)
-1. `/cliente/solicitar` → valor, parcelas, 1º vencimento
-2. Chama RPC `create_loan_request()` → valida limites + calcula no servidor
-3. Retorna protocolo + resumo calculado
-4. Admin analisa → aprova/recusa → gera parcelas
-
----
-
-## 🛠️ Scripts Disponíveis
-
-```bash
-npm run test:auth          # Testes integração auth
-npm run test:loan-rules    # Testes unitários cálculo
-npm run supabase:deploy    # Deploy Edge Function
-npm run supabase:serve     # Edge Function local
-npm run netlify:dev        # Frontend local
-```
-
----
-
-## 📋 Próximas Features (Roadmap)
-
-1. **Solicitar Empréstimo** (cliente) — UI + RPC `create_loan_request`
-2. **Minhas Solicitações** (cliente) — listar + detalhes
-3. **Painel Admin: Solicitações** — tabela, filtros, ações
-4. **Aprovar/Recusar** (admin) — update status + gerar parcelas
-5. **Tabela Parcelas** — migration + geração automática
-6. **Cobrança/WhatsApp** — integração futura
-
----
-
-## 🔗 Links Úteis
-
-- [Supabase Dashboard](https://supabase.com/dashboard/project/cluxbeysuboablzeawnm)
-- [Netlify Dashboard](https://app.netlify.com/)
-- [Documentação Supabase Edge Functions](https://supabase.com/docs/guides/functions)
-- [Documentação Netlify](https://docs.netlify.com/)
-
----
-
-**Desenvolvido para JK CRED** — Crédito com clareza, do pedido à última parcela.
+A lista de parcelas é construída a partir de `loan_settings.max_installments`, sem exibir opções desabilitadas além do limite. Leituras por renderização e atualização da estimativa não compartilham o bloqueio das escritas: uma resposta antiga não deixa a nova tela presa em carregamento. Estados da solicitação aparecem com nomes legíveis e badges.

@@ -1,140 +1,5 @@
-# JK CRED — Setup de teste local com Supabase CLI
-
-## 1. Instalar Supabase CLI
-```bash
-npm i -g supabase
-# ou: scoop install supabase (Windows)
-```
-
-## 2. Login e link do projeto
-```bash
-supabase login
-supabase link --project-ref SEU_PROJECT_REF
-# Pegue o Project Ref em: https://supabase.com/dashboard/project/SEU_PROJECT/settings/general
-```
-
-## 3. Variáveis de ambiente local
-Crie `.env.local` na raiz:
-```env
-SUPABASE_URL=https://SEU-PROJECT.supabase.co
-SUPABASE_ANON_KEY=sua_anon_key_aqui
-SUPABASE_SERVICE_ROLE_KEY=sua_service_role_key_aqui
-SITE_URL=http://localhost:8888
-```
-
-## 4. Subir Edge Function localmente
-```bash
-supabase functions serve acesso-cliente --env-file .env.local
-# Roda em http://localhost:54321/functions/v1/acesso-cliente
-```
-
-## 5. Subir frontend local (Netlify CLI)
-```bash
-npm i -g netlify-cli
-netlify dev
-# Roda em http://localhost:8888
-# O Netlify CLI lê netlify.toml e injeta as env vars no build
-```
-
-## 6. Rodar testes automatizados
-```bash
-# Testando Edge Function local
-TEST_BASE=http://localhost:54321/functions/v1/acesso-cliente node test-auth.js
-
-# Testando via Netlify Functions (se configurado)
-TEST_BASE=http://localhost:8888/.netlify/functions/acesso-cliente node test-auth.js
-```
-
-## 7. Testar cadastro duplicado (no navegador)
-1. Abra http://localhost:8888/#/cliente/cadastro
-2. Abra DevTools → Console
-3. Cole o código impresso pelo `test-auth.js` no final
-4. Observe se bloqueia corretamente
-
----
-
-## netlify.toml (commit este arquivo)
-```toml
 [build]
-  publish = "."
-  command = ""
-
-[functions]
-  directory = "netlify/functions"  # não usado, mas bom ter
-
-[[headers]]
-  for = "/*"
-  [headers.values]
-    X-Frame-Options = "DENY"
-    X-Content-Type-Options = "nosniff"
-    Referrer-Policy = "strict-origin-when-cross-origin"
-
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
-```
-
----
-
-## Checklist antes de testar
-
-- [ ] Migrations rodadas no Supabase (SQL Editor): `001_schema.sql` + `003_loans.sql`
-- [ ] Primeiro admin criado: `insert into admin_users (user_id) select id from auth.users where email = 'seu@email.com';`
-- [ ] Edge Function deployada: `supabase functions deploy acesso-cliente`
-- [ ] `SITE_URL` configurada nas vars da Edge Function (Supabase Dashboard → Functions → acesso-cliente → Settings)
-- [ ] Netlify conectado, env vars `SUPABASE_URL` e `SUPABASE_ANON_KEY` definidas
-- [ ] `.env.local` criado com as mesmas chaves
-
----
-
-## Fluxo de teste manual completo
-
-### A. Cadastro novo usuário
-1. Acesse `/#/cliente/cadastro`
-2. Preencha tudo (CPF válido, telefone com DDD, email único)
-3. Submit → deve aparecer "Cadastro recebido! Enviamos link..."
-4. Verifique email → clique link → cai em `/#/redefinir-senha`
-5. Defina senha → redireciona para login
-6. Login com telefone + senha → entra no dashboard
-
-### B. Login existente
-1. Acesse `/#/cliente/login`
-2. Telefone + senha corretos → entra
-3. Senha errada → "Telefone ou senha incorretos"
-4. 5x errado → "Muitas tentativas" (15 min)
-
-### C. Recuperar senha
-1. Acesse `/#/cliente/recuperar`
-2. Telefone cadastrado → "Se houver conta, enviamos link"
-3. Telefone NÃO cadastrado → **mesma mensagem** (não revela existência)
-4. 3x seguido → "Muitas tentativas" (60 min)
-5. Link no email → `/#/redefinir-senha` → nova senha → login
-
-### D. Tentar cadastrar duplicado
-1. Mesmo CPF do usuário A → deve falhar (constraint `profiles_cpf_unico`)
-2. Mesmo telefone → deve falhar (`profiles_phone_unico`)
-3. Mesmo email → deve falhar (`profiles_email_unico` + Auth unique)
-4. Mensagem no frontend: "Não foi possível concluir o cadastro. Confira os dados..."
-
----
-
-## Problemas conhecidos para observar
-
-| Cenário | Comportamento esperado | Bug conhecido |
-|---------|------------------------|---------------|
-| 2 cadastros simultâneos mesmo CPF | Um falha, outro passa | Race condition: pode criar user no Auth sem profile |
-| Rate limit não limpa tabela | `auth_attempts` cresce indefinidamente | Só limpa no login sucesso (linha 73) |
-| Erro de duplicado no signup | Mensagem genérica | Usuário não sabe qual campo duplicou |
-
-Quer que eu corrija esses 3 pontos antes de você testar?<tool_call>
-<function=write>
-<parameter=content>
-# netlify.toml — JK CRED
-# Commit este arquivo na raiz do repo
-
-[build]
-  publish = "."
+  publish = "public"
   command = ""
 
 [[headers]]
@@ -142,14 +7,13 @@ Quer que eu corrija esses 3 pontos antes de você testar?<tool_call>
   [headers.values]
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
-    Referrer-Policy = "strict-origin-when-cross-origin"
-    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    Referrer-Policy = "no-referrer"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    Cross-Origin-Opener-Policy = "same-origin"
+    Strict-Transport-Security = "max-age=31536000"
+    Content-Security-Policy = "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self' https://cluxbeysuboablzeawnm.supabase.co; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; frame-src 'none'; form-action 'self'"
 
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
-
-# Variáveis de ambiente (configure no painel do Netlify: Site settings → Environment variables)
-# SUPABASE_URL = https://seu-project.supabase.co
-# SUPABASE_ANON_KEY = sua_anon_key

@@ -1,6 +1,6 @@
 // Rodar com: node site/tests/loan-rules.test.js
 const assert = require('node:assert/strict');
-const { calcLoan, loanSummaryText } = require('../loan-rules.js');
+const { calcLoan, loanSummaryText } = require('./loan-rules.js');
 let ok = 0; const t = (nome, fn) => { fn(); ok++; console.log('OK  ', nome); };
 
 t('R$ 1.000 em 3x = total 1.320, 3 x 440', () => {

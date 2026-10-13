@@ -45,12 +45,7 @@ begin
   return new;
 end $$;
 
--- 2. Cria/atualiza o primeiro administrador (substitua o email se necessário)
-insert into public.admin_users (user_id)
-select id from auth.users where email = 'kaikandradesoares1@gmail.com'
-on conflict (user_id) do nothing;
-
--- 3. Verificação: confirme se o admin foi criado
-select au.user_id, u.email, au.created_at
-from public.admin_users au
-join auth.users u on u.id = au.user_id;
+-- 2. Promova um administrador somente após identificar e autorizar a conta no projeto.
+-- Exemplo manual (substitua pelo UUID confirmado; esta migration não promove contas):
+-- insert into public.admin_users (user_id) values ('UUID-DO-USUARIO-AUTORIZADO')
+-- on conflict (user_id) do nothing;

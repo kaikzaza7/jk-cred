@@ -133,12 +133,14 @@ begin
       having count(*) filter (where amount_paid >= 0) = 0
     ) then -- Nenhum pagamento ainda
       -- manutenção do status existente
+      null;
     when exists (
       select 1 from public.payments
       where loan_request_id = p_loan_request_id
       and amount_paid > 0
     ) then -- Tem pelo menos um pagamento
       -- status já será refletido via consultas
+      null;
     end case;
 end;
 $$;
@@ -151,6 +153,9 @@ select coalesce(sum(amount_paid), 0) from public.payments where loan_request_id 
 $$;
 
 -- ========== 6. Função: total de empréstimos liberados por período ==========
+-- Não há coluna de data de liberação no schema; expomos created_at sem alegar que o
+-- empréstimo foi liberado naquele instante. Remova a assinatura antiga se reaplicar.
+drop function if exists public.get_loans_released_since(date);
 create or replace function public.get_loans_released_since(
   p_since_date date
 ) returns table (
@@ -159,10 +164,10 @@ create or replace function public.get_loans_released_since(
   user_id uuid,
   requested_amount numeric(12,2),
   total_amount numeric(12,2),
-  released_at timestamptz,
+  created_at timestamptz,
   status text
 ) language sql stable set search_path = public as $$
-select id, protocol, user_id, requested_amount, total_amount, created_at as released_at, status
+select id, protocol, user_id, requested_amount, total_amount, created_at, status
 from public.loan_requests
 where status = 'liberada' and created_at >= p_since_date;
 $$;
