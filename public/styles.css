@@ -337,3 +337,16 @@ tbody tr:hover{background:color-mix(in srgb,var(--sky2) 55%,transparent)}
 @media(max-width:640px){.shell{grid-template-columns:minmax(0,1fr)}.g3,.g2{grid-template-columns:minmax(0,1fr)}.g5{grid-template-columns:repeat(2,minmax(0,1fr))}.auth-card-wide .auth-form{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:520px){.g5,.row2,.row3{grid-template-columns:minmax(0,1fr)}.landing main{padding:2.5rem 0}.auth-topbar{margin-bottom:1.5rem}}
 @media(prefers-reduced-motion:reduce){.choice,.btn{transition:none}}
+
+/* ===== RELATÓRIOS ===== */
+.reports-filters{display:grid;gap:1rem;margin-bottom:1.5rem}
+.reports-filters .grid{margin-top:0}
+.chart-container{position:relative;height:200px}
+.chart-container canvas{width:100%;height:100%}
+.indicator-card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:1rem;display:flex;flex-direction:column;gap:.5rem}
+.indicator-card .ico{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:var(--sky);color:var(--blue)}
+.indicator-card .val{font-size:1.5rem;font-weight:800}
+.indicator-card small{color:var(--muted);font-size:.8rem}
+.table-wrap{overflow-x:auto}
+@media(max-width:900px){.grid.g5{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:640px){.grid.g5{grid-template-columns:1fr}.chart-container{height:180px}}

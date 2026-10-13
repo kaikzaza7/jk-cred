@@ -164,12 +164,13 @@ const api = {
   views,
   bind,
   redirectFor,
-  logout: () => JKErrors.run('logout', async () => {
+  logout: async () => {
     const { error } = await sb.auth.signOut();
     if (error) throw error;
+    S.user = null; S.profile = null; S.admin = false;
     await schedule('SIGNED_OUT', null);
     location.hash = '#/login';
-  }),
+  },
   get ready() { return S.ready; },
   get user() { return S.user; },
   get profile() { return S.profile; },

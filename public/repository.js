@@ -139,6 +139,51 @@
       return row;
     },
 
+    async getFinancialIndicators({ dateFrom, dateTo, status, search } = {}) {
+      requireAdmin();
+      const data = unwrap(await client().rpc('get_financial_indicators', {
+        p_date_from: dateFrom,
+        p_date_to: dateTo,
+        p_status: status,
+        p_search: search
+      }));
+      return firstRow(data) ?? {};
+    },
+
+    async getLoansReport({ dateFrom, dateTo, status, search, limit = 500 } = {}) {
+      requireAdmin();
+      const data = unwrap(await client().rpc('get_loans_report', {
+        p_date_from: dateFrom,
+        p_date_to: dateTo,
+        p_status: status,
+        p_search: search,
+        p_limit: limit
+      }));
+      return data ?? [];
+    },
+
+    async getInstallmentsReport({ dateFrom, dateTo, status, search, limit = 500 } = {}) {
+      requireAdmin();
+      const data = unwrap(await client().rpc('get_installments_report', {
+        p_date_from: dateFrom,
+        p_date_to: dateTo,
+        p_status: status,
+        p_search: search,
+        p_limit: limit
+      }));
+      return data ?? [];
+    },
+
+    async getAuditLog({ dateFrom, dateTo, limit = 200 } = {}) {
+      requireAdmin();
+      const data = unwrap(await client().rpc('get_audit_log', {
+        p_date_from: dateFrom,
+        p_date_to: dateTo,
+        p_limit: limit
+      }));
+      return data ?? [];
+    },
+
     transitions: Object.freeze(Object.fromEntries(Object.entries(transitions).map(([key, values]) => [key, Object.freeze(values.slice())])))
   };
 

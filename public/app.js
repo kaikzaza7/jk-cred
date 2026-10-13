@@ -42,13 +42,53 @@
   }
   function escapeSegment(value) { return encodeURIComponent(String(value)); }
   function unescapeSegment(value) { try { return decodeURIComponent(value); } catch { return ''; } }
+  function buildWhatsAppUrl(loan, profile) {
+    const cfg = win.JK_CONFIG || {};
+    const number = cfg.WHATSAPP_NUMBER || '5579991484231';
+    const protocol = val(loan, 'protocol', 'protocol') || '—';
+    const requestedAmount = money(val(loan, 'requested_amount', 'requestedAmount'));
+    const chargeAmount = money(val(loan, 'charge_amount', 'chargeAmount'));
+    const installmentFee = money(val(loan, 'installment_fee', 'installmentFee'));
+    const totalAmount = money(val(loan, 'total_amount', 'totalAmount'));
+    const installments = val(loan, 'installments', 'installments');
+    const installmentValue = money(val(loan, 'installment_value', 'installmentValue'));
+    const firstDueDate = date(val(loan, 'first_due_date', 'firstDueDate'));
+    const createdAt = date(val(loan, 'created_at', 'createdAt'));
+    const clientName = profile?.full_name || loan.profiles?.full_name || '—';
+    const clientPhone = profile?.phone || '—';
+    const lines = [
+      'NOVA SOLICITAÇÃO DE EMPRÉSTIMO — JK CRED',
+      '',
+      'Olá! Gostaria de solicitar uma análise de empréstimo.',
+      '',
+      'DADOS DO CLIENTE',
+      '',
+      `Nome: ${clientName}`,
+      `Telefone: ${clientPhone}`,
+      '',
+      'DADOS DA SOLICITAÇÃO',
+      '',
+      `Protocolo: ${protocol}`,
+      `Valor solicitado: ${requestedAmount}`,
+      `Quantidade de parcelas: ${installments}`,
+      `Valor de cada parcela: ${installmentValue}`,
+      `Encargos: ${chargeAmount}`,
+      `Total a pagar: ${totalAmount}`,
+      `Primeiro vencimento: ${firstDueDate}`,
+      `Data da solicitação: ${createdAt}`,
+      '',
+      'Aguardo a análise da JK CRED.'
+    ];
+    const text = encodeURIComponent(lines.join('\n'));
+    return `https://wa.me/${number}?text=${text}`;
+  }
   function table(rows, headers, empty) {
     return `<div class="table-wrap"><table><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows || `<tr><td colspan="${headers.length}" class="muted">${empty}</td></tr>`}</tbody></table></div>`;
   }
   function shell(title, content, role = 'client') {
     const isAdmin = role === 'admin';
     const links = isAdmin
-      ? [['Visão geral', '#/admin'], ['Solicitações', '#/admin/solicitacoes'], ['Empréstimos', '#/admin/emprestimos'], ['Pagamentos', '#/admin/pagamentos']]
+      ? [['Visão geral', '#/admin'], ['Solicitações', '#/admin/solicitacoes'], ['Empréstimos', '#/admin/emprestimos'], ['Pagamentos', '#/admin/pagamentos'], ['Relatórios', '#/admin/relatorios']]
       : [['Início', '#/cliente'], ['Solicitações', '#/cliente/solicitacoes'], ['Meus empréstimos', '#/cliente/emprestimos'], ['Solicitar', '#/cliente/solicitar']];
     return `<div class="shell" id="shell"><aside class="side-nav"><a class="logo" href="#/">JK <em>CRED</em></a><strong>${escapeHtml(title)}</strong><nav aria-label="Navegação">${links.map(([label, href]) => `<a href="${href}">${label}</a>`).join('')}</nav><nav class="exit"><a href="#/sair">Sair</a></nav></aside><div class="scrim" id="scrim"></div><section><header class="topbar"><button class="menu-btn" id="menuBtn" type="button" aria-label="Abrir menu">${icon('menu')}</button><strong>${escapeHtml(title)}</strong><span class="sp"></span><a class="btn btn-ghost" href="#/sair">Sair</a></header><main class="page">${content}</main></section></div>`;
   }
@@ -58,6 +98,108 @@
   function simulator() {
     const firstDue = addCalendarDays(businessDate(), 7);
     return `<h1>Simular empréstimo</h1><p class="muted">Confira uma estimativa. O cálculo definitivo é confirmado pelo servidor ao enviar.</p><form id="f-simulador"><section class="card"><div class="row2"><div class="field"><label for="valor">Valor solicitado</label><input id="valor" name="amount" type="number" min="100" max="5000" step="0.01" value="1000" required></div><div class="field"><label for="parcelas">Parcelas</label><select id="parcelas" name="installments" required disabled><option value="">Carregando parcelas…</option></select></div></div><div class="field"><label for="dataVencimento">Primeiro vencimento</label><input id="dataVencimento" name="firstDueDate" type="date" value="${firstDue}" required></div></section><p id="estimate-validation" class="estimate-validation" role="status" hidden></p><section id="estimate-card" class="card estimate-card mt-card"><h2>Seu empréstimo em números</h2><div class="estimate-metrics"><div><span>Você recebe</span><output id="output-valor-solicitado"></output></div><div><span>Encargos estimados</span><output id="output-encargos"></output></div><div class="estimate-total"><span>Total a pagar</span><output id="output-total"></output></div></div><div class="estimate-composition"><h3>Do que é feito o total</h3><div id="estimate-bar" class="estimate-bar" aria-hidden="true"></div><div id="estimate-legend" class="estimate-legend"></div><p id="estimate-fees" class="muted"></p></div><div class="estimate-installments"><span>Pagamento mensal</span><output id="output-parcela"></output></div><div id="cronograma" aria-live="polite"></div></section><div class="notice show" role="note">O envio cria uma solicitação real para análise. A simulação, sozinha, não gera pedido.</div><button class="btn btn-primary btn-block" type="submit">Enviar solicitação real</button><div id="form-message" role="status" aria-live="polite"></div></form>`;
+  }
+  function reportsHTML() {
+    const today = businessDate();
+    const weekAgo = addCalendarDays(today, -7);
+    const monthAgo = addCalendarDays(today, -30);
+    const monthStart = today.slice(0, 8) + '01';
+    const lastMonthEnd = addCalendarDays(monthStart, -1);
+    const lastMonthStart = lastMonthEnd.slice(0, 8) + '01';
+    return `
+      <section class="card">
+        <h2>Filtros</h2>
+        <form id="f-reports-filters" class="grid g5">
+          <div class="field">
+            <label for="period-preset">Período rápido</label>
+            <select id="period-preset" name="periodPreset">
+              <option value="custom">Personalizado</option>
+              <option value="today">Hoje</option>
+              <option value="week">Últimos 7 dias</option>
+              <option value="month">Mês atual</option>
+              <option value="last-month">Mês anterior</option>
+              <option value="30days">Últimos 30 dias</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="date-from">Data inicial</label>
+            <input id="date-from" name="dateFrom" type="date" value="${monthStart}">
+          </div>
+          <div class="field">
+            <label for="date-to">Data final</label>
+            <input id="date-to" name="dateTo" type="date" value="${today}">
+          </div>
+          <div class="field">
+            <label for="status-filter">Situação</label>
+            <select id="status-filter" name="statusFilter">
+              <option value="">Todas</option>
+              <option value="aguardando_analise">Aguardando análise</option>
+              <option value="em_analise">Em análise</option>
+              <option value="aprovada">Aprovada</option>
+              <option value="liberada">Liberada</option>
+              <option value="recusada">Recusada</option>
+              <option value="aguardando_formalizacao">Aguardando formalização</option>
+              <option value="formalizada">Formalizada</option>
+              <option value="cancelada">Cancelada</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="client-search">Cliente / Protocolo</label>
+            <input id="client-search" name="clientSearch" type="search" placeholder="Buscar...">
+          </div>
+        </form>
+        <div class="row2">
+          <button class="btn btn-primary" type="button" id="btn-apply-filters">Aplicar filtros</button>
+          <button class="btn btn-ghost" type="button" id="btn-export-csv">Exportar CSV</button>
+        </div>
+      </section>
+
+      <section class="grid g5" id="indicators" aria-label="Indicadores financeiros"></section>
+
+      <section class="grid g2 mt-card" id="charts">
+        <article class="card">
+          <h3>Evolução de solicitações</h3>
+          <canvas id="chart-requests" height="200" aria-label="Gráfico de evolução de solicitações por dia"></canvas>
+        </article>
+        <article class="card">
+          <h3>Solicitações por status</h3>
+          <canvas id="chart-status" height="200" aria-label="Gráfico de solicitações por status"></canvas>
+        </article>
+        <article class="card">
+          <h3>Valores liberados</h3>
+          <canvas id="chart-released" height="200" aria-label="Gráfico de evolução de valores liberados"></canvas>
+        </article>
+        <article class="card">
+          <h3>Pagamentos recebidos</h3>
+          <canvas id="chart-payments" height="200" aria-label="Gráfico de evolução de pagamentos recebidos"></canvas>
+        </article>
+        <article class="card" style="grid-column: 1 / -1;">
+          <h3>Distribuição de parcelas</h3>
+          <canvas id="chart-installments" height="200" aria-label="Gráfico de distribuição de parcelas por situação"></canvas>
+        </article>
+      </section>
+
+      <section class="card mt-card">
+        <h2>Relatório detalhado de empréstimos</h2>
+        <div class="table-wrap" id="loans-report-table">
+          <table><thead><tr><th>Protocolo</th><th>Cliente</th><th>Data solicitação</th><th>Valor solicitado</th><th>Encargos</th><th>Total previsto</th><th>Parcelas</th><th>Status</th><th>Valor liberado</th><th>Total recebido</th><th>Saldo restante</th></tr></thead><tbody id="loans-report-body"><tr><td colspan="11" class="muted">Carregando…</td></tr></tbody></table>
+        </div>
+      </section>
+
+      <section class="card mt-card">
+        <h2>Relatório de parcelas e pagamentos</h2>
+        <div class="table-wrap" id="installments-report-table">
+          <table><thead><tr><th>Protocolo</th><th>Cliente</th><th>Parcela</th><th>Valor previsto</th><th>Valor pago</th><th>Saldo</th><th>Vencimento</th><th>Data pagamento</th><th>Situação</th></tr></thead><tbody id="installments-report-body"><tr><td colspan="9" class="muted">Carregando…</td></tr></tbody></table>
+        </div>
+      </section>
+
+      <section class="card mt-card">
+        <h2>Histórico e auditoria</h2>
+        <div class="table-wrap" id="audit-table">
+          <table><thead><tr><th>Data/hora</th><th>Operação</th><th>Administrador</th><th>Registro</th><th>Protocolo</th><th>Status anterior</th><th>Status novo</th><th>Observação</th></tr></thead><tbody id="audit-body"><tr><td colspan="8" class="muted">Carregando…</td></tr></tbody></table>
+        </div>
+      </section>
+    `;
   }
   const statusNames = { aguardando_analise:'Aguardando análise', em_analise:'Em análise', aprovada:'Aprovada', liberada:'Liberada', recusada:'Recusada', aguardando_formalizacao:'Aguardando formalização', formalizada:'Formalizada', cancelada:'Cancelada', pendente:'Pendente', parcialmente_paga:'Parcialmente paga', paga:'Paga', atrasada:'Em atraso' };
   function statusBadge(status) {
@@ -104,6 +246,7 @@
       if (path === '#/admin/solicitacoes') return { role: 'admin', title: 'Solicitações', html: shell('Solicitações', `<h1>Solicitações</h1><div id="loans-table" aria-live="polite">Carregando…</div>`, 'admin'), load: 'admin-requests' };
       if (path === '#/admin/emprestimos') return { role: 'admin', title: 'Empréstimos', html: shell('Empréstimos', `<h1>Empréstimos aprovados</h1><div id="loans-table" aria-live="polite">Carregando…</div>`, 'admin'), load: 'admin-loans' };
       if (path === '#/admin/pagamentos') return { role: 'admin', title: 'Pagamentos', html: shell('Pagamentos', `<h1>Registrar pagamento</h1><div class="field"><label for="payment-search">Buscar protocolo ou cliente</label><input id="payment-search" type="search" autocomplete="off"></div><div id="payment-results" aria-live="polite">Digite para buscar.</div><section id="payment-panel"></section>`, 'admin'), load: 'payment-search' };
+      if (path === '#/admin/relatorios') return { role: 'admin', title: 'Relatórios', html: shell('Relatórios', reportsHTML(), 'admin'), load: 'reports' };
       if (path.startsWith('#/admin/emprestimo/')) return { role: 'admin', title: 'Detalhes', html: shell('Detalhes', `<h1>Detalhes do empréstimo</h1><div id="loan-detail">Carregando…</div>`, 'admin'), load: 'admin-detail', id: unescapeSegment(path.slice('#/admin/emprestimo/'.length)) };
       if (path === '#/admin') return { role: 'admin', title: 'Visão geral', html: shell('Visão geral', `<h1>Painel JK CRED</h1><p class="muted">Contagens abaixo representam a amostra mais recente de até 100 solicitações.</p><section class="grid g3"><article class="card"><h3>Na amostra</h3><output id="count-total">—</output></article><article class="card"><h3>Pendentes na amostra</h3><output id="count-pending">—</output></article><article class="card"><h3>Aprovadas na amostra</h3><output id="count-approved">—</output></article></section><div id="loans-table">Carregando…</div>`, 'admin'), load: 'dashboard' };
       if (path === '#/cliente/solicitar' || path === '#/cliente/simulador') return { role: 'client', title: 'Solicitar', html: shell('Solicitar', simulator()) };
@@ -138,6 +281,8 @@
         doc.getElementById('count-pending').textContent = String(loans.filter(x => ['aguardando_analise', 'em_analise'].includes(val(x, 'status', 'status'))).length);
         doc.getElementById('count-approved').textContent = String(loans.filter(x => val(x, 'status', 'status') === 'aprovada').length);
         await loadRows(doc.getElementById('loans-table'), loans.slice(0, 10), true);
+      } else if (route.load === 'reports') {
+        await loadReports(r, version);
       } else if (route.load === 'admin-detail' || route.load === 'client-detail') {
         const loan = route.id ? await r.getLoan({ id: route.id }) : await r.getLoan({ protocol: route.protocol });
         const payments = await r.listPayments(val(loan, 'id', 'id'));
@@ -282,9 +427,246 @@
           await clearKey(win, 'loan-request', userId);
           if (!current(version)) return;
           form.dataset.completed = 'true';
-          if (messageTarget) messageTarget.textContent = `Solicitação ${val(loan, 'protocol', 'protocol')} enviada para análise.`;
+          const protocol = val(loan, 'protocol', 'protocol');
+          if (messageTarget) messageTarget.textContent = `Solicitação ${protocol} enviada para análise.`;
           toast('Solicitação enviada para análise.');
-          win.location.hash = '#/cliente/solicitacoes';
+          const profile = win.JKAuth?.profile;
+          const whatsAppUrl = buildWhatsAppUrl(loan, profile);
+          let opened = false;
+          try {
+            const w = win.open(whatsAppUrl, '_blank', 'noopener,noreferrer');
+            opened = !!w;
+            if (w) w.focus();
+          } catch (_) {
+            opened = false;
+          }
+          if (!opened) {
+            if (messageTarget) {
+              messageTarget.innerHTML = `Solicitação ${protocol} enviada para análise. <button class="btn btn-wa btn-block" type="button" id="wa-fallback">${icon('chat')} Abrir WhatsApp</button>`;
+              const fallbackBtn = doc.getElementById('wa-fallback');
+              if (fallbackBtn) {
+                fallbackBtn.addEventListener('click', () => {
+                  win.open(whatsAppUrl, '_blank', 'noopener,noreferrer');
+                });
+}
+    async function loadReports(r, version) {
+      const form = doc.getElementById('f-reports-filters');
+      if (!form) return;
+      const formData = new FormData(form);
+      const preset = formData.get('periodPreset') || 'month';
+      const dateFrom = formData.get('dateFrom') || businessDate().slice(0, 8) + '01';
+      const dateTo = formData.get('dateTo') || businessDate();
+      const statusFilter = formData.get('statusFilter') || null;
+      const clientSearch = formData.get('clientSearch') || null;
+
+      let dateFromFinal = dateFrom, dateToFinal = dateTo;
+      const today = businessDate();
+      if (preset === 'today') { dateFromFinal = today; dateToFinal = today; }
+      else if (preset === 'week') { dateFromFinal = addCalendarDays(today, -7); dateToFinal = today; }
+      else if (preset === 'month') { dateFromFinal = today.slice(0, 8) + '01'; dateToFinal = today; }
+      else if (preset === 'last-month') {
+        const lastMonthEnd = addCalendarDays(dateFromFinal, -1);
+        dateFromFinal = lastMonthEnd.slice(0, 8) + '01';
+        dateToFinal = lastMonthEnd;
+      } else if (preset === '30days') { dateFromFinal = addCalendarDays(today, -30); dateToFinal = today; }
+
+      try {
+        const [indicators, loansReport, installmentsReport, auditLog] = await Promise.all([
+          r.getFinancialIndicators({ dateFrom: dateFromFinal, dateTo: dateToFinal, status: statusFilter, search: clientSearch }),
+          r.getLoansReport({ dateFrom: dateFromFinal, dateTo: dateToFinal, status: statusFilter, search: clientSearch, limit: 500 }),
+          r.getInstallmentsReport({ dateFrom: dateFromFinal, dateTo: dateToFinal, status: statusFilter, search: clientSearch, limit: 500 }),
+          r.getAuditLog({ dateFrom: dateFromFinal, dateTo: dateToFinal, limit: 200 })
+        ]);
+        if (!current(version)) return;
+        renderIndicators(indicators);
+        renderCharts(indicators);
+        renderLoansReport(loansReport);
+        renderInstallmentsReport(installmentsReport);
+        renderAuditLog(auditLog);
+        bindReportEvents();
+      } catch (error) {
+        if (current(version)) throw error;
+      }
+    }
+    function renderIndicators(d) {
+      const container = doc.getElementById('indicators');
+      if (!container) return;
+      const cards = [
+        { label: 'Solicitações recebidas', value: d.totalRequests ?? 0, desc: 'Total de solicitações criadas no período', icon: 'inbox' },
+        { label: 'Empréstimos aprovados', value: d.approvedCount ?? 0, desc: 'Solicitações com status aprovada', icon: 'shield' },
+        { label: 'Empréstimos liberados', value: d.releasedCount ?? 0, desc: 'Empréstimos efetivamente liberados (status liberada)', icon: 'wallet' },
+        { label: 'Total solicitado', value: money(d.totalRequested ?? 0), desc: 'Soma dos valores solicitados', icon: 'wallet' },
+        { label: 'Total aprovado', value: money(d.totalApproved ?? 0), desc: 'Soma dos valores das solicitações aprovadas', icon: 'wallet' },
+        { label: 'Total liberado', value: money(d.totalReleased ?? 0), desc: 'Soma dos valores efetivamente liberados', icon: 'wallet' },
+        { label: 'Pagamentos registrados', value: money(d.totalPayments ?? 0), desc: 'Soma dos pagamentos recebidos', icon: 'card' },
+        { label: 'Saldo pendente', value: money(d.pendingBalance ?? 0), desc: 'Total a receber (liberado - recebido)', icon: 'card' },
+        { label: 'Parcelas pagas', value: d.paidInstallments ?? 0, desc: 'Quantidade de parcelas quitadas', icon: 'clock' },
+        { label: 'Parcelas pendentes', value: d.pendingInstallments ?? 0, desc: 'Parcelas não pagas e não vencidas', icon: 'clock' },
+        { label: 'Parcelas atrasadas', value: d.overdueInstallments ?? 0, desc: 'Parcelas vencidas não pagas', icon: 'clock' }
+      ];
+      container.innerHTML = cards.map(c => `
+        <article class="card stat">
+          <div class="ico">${icon(c.icon)}</div>
+          <div class="val">${c.value}</div>
+          <small>${c.desc}</small>
+        </article>
+      `).join('');
+    }
+    function renderCharts(d) {
+      const ctxRequests = doc.getElementById('chart-requests')?.getContext('2d');
+      const ctxStatus = doc.getElementById('chart-status')?.getContext('2d');
+      const ctxReleased = doc.getElementById('chart-released')?.getContext('2d');
+      const ctxPayments = doc.getElementById('chart-payments')?.getContext('2d');
+      const ctxInstallments = doc.getElementById('chart-installments')?.getContext('2d');
+      if (ctxRequests && d.requestsByDay) drawLineChart(ctxRequests, d.requestsByDay.map(x => x.day), d.requestsByDay.map(x => x.count), 'Solicitações/dia', '#2F6BFF');
+      if (ctxStatus && d.statusBreakdown) drawDoughnutChart(ctxStatus, d.statusBreakdown.map(x => x.status), d.statusBreakdown.map(x => x.count), ['#FFB700','#2F6BFF','#1FA855','#D6334A','#6C757D','#8E44AD','#E74C3C','#95A5A6']);
+      if (ctxReleased && d.releasedByDay) drawLineChart(ctxReleased, d.releasedByDay.map(x => x.day), d.releasedByDay.map(x => x.amount), 'Liberado/dia (BRL)', '#1FA855');
+      if (ctxPayments && d.paymentsByDay) drawLineChart(ctxPayments, d.paymentsByDay.map(x => x.day), d.paymentsByDay.map(x => x.amount), 'Recebido/dia (BRL)', '#2F6BFF');
+      if (ctxInstallments) drawDoughnutChart(ctxInstallments, ['Pagas','Pendentes','Parciais','Atrasadas'], [d.paidInstallments||0, d.pendingInstallments||0, d.partialInstallments||0, d.overdueInstallments||0], ['#2E7D32','#E65100','#1565C0','#C62828']);
+    }
+    function drawLineChart(ctx, labels, data, label, color) {
+      const canvas = ctx.canvas;
+      const w = canvas.width, h = canvas.height;
+      const padding = 40;
+      const maxVal = Math.max(...data, 1);
+      const stepX = (w - 2 * padding) / Math.max(labels.length - 1, 1);
+      ctx.clearRect(0, 0, w, h);
+      ctx.strokeStyle = '#E2E8F2';
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= 4; i++) {
+        const y = padding + (h - 2 * padding) * i / 4;
+        ctx.beginPath(); ctx.moveTo(padding, y); ctx.lineTo(w - padding, y); ctx.stroke();
+        ctx.fillStyle = '#5B6B88'; ctx.font = '10px system-ui'; ctx.textAlign = 'right';
+        ctx.fillText(money(maxVal * (1 - i / 4)), padding - 8, y + 3);
+      }
+      ctx.beginPath();
+      data.forEach((v, i) => {
+        const x = padding + i * stepX;
+        const y = h - padding - (v / maxVal) * (h - 2 * padding);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
+      ctx.fillStyle = color + '33';
+      ctx.lineTo(w - padding, h - padding);
+      ctx.lineTo(padding, h - padding);
+      ctx.closePath(); ctx.fill();
+      data.forEach((v, i) => {
+        const x = padding + i * stepX;
+        const y = h - padding - (v / maxVal) * (h - 2 * padding);
+        ctx.beginPath(); ctx.arc(x, y, 3, 0, 2 * Math.PI); ctx.fillStyle = color; ctx.fill();
+        ctx.fillStyle = '#0A1F44'; ctx.font = '10px system-ui'; ctx.textAlign = 'center';
+        ctx.fillText(labels[i], x, h - padding + 18);
+      });
+    }
+    function drawDoughnutChart(ctx, labels, data, colors) {
+      const canvas = ctx.canvas;
+      const w = canvas.width, h = canvas.height;
+      const cx = w / 2, cy = h / 2, r = Math.min(w, h) / 2 - 20;
+      const total = data.reduce((a, b) => a + b, 0);
+      if (!total) { ctx.fillStyle = '#5B6B88'; ctx.font = '12px system-ui'; ctx.textAlign = 'center'; ctx.fillText('Sem dados', cx, cy); return; }
+      let angle = -Math.PI / 2;
+      data.forEach((v, i) => {
+        const slice = (v / total) * 2 * Math.PI;
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, angle, angle + slice); ctx.closePath();
+        ctx.fillStyle = colors[i]; ctx.fill();
+        angle += slice;
+      });
+      ctx.beginPath(); ctx.arc(cx, cy, r * 0.6, 0, 2 * Math.PI); ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--surface') || '#fff'; ctx.fill();
+      const legendY = h - 30;
+      labels.forEach((l, i) => {
+        const x = 20 + i * 120;
+        ctx.fillStyle = colors[i]; ctx.fillRect(x, legendY, 12, 12);
+        ctx.fillStyle = '#0A1F44'; ctx.font = '10px system-ui'; ctx.textAlign = 'left';
+        ctx.fillText(`${l}: ${data[i]}`, x + 16, legendY + 9);
+      });
+    }
+    function renderLoansReport(rows) {
+      const tbody = doc.getElementById('loans-report-body');
+      if (!tbody) return;
+      if (!rows?.length) { tbody.innerHTML = '<tr><td colspan="11" class="muted">Nenhum empréstimo encontrado.</td></tr>'; return; }
+      tbody.innerHTML = rows.map(l => `<tr><td>${escapeHtml(val(l, 'protocol', 'protocol'))}</td><td>${escapeHtml(l.profiles?.full_name || '—')}</td><td>${date(val(l, 'created_at', 'createdAt'))}</td><td>${money(val(l, 'requested_amount', 'requestedAmount'))}</td><td>${money(val(l, 'charge_amount', 'chargeAmount'))}</td><td>${money(val(l, 'total_amount', 'totalAmount'))}</td><td>${escapeHtml(val(l, 'installments', 'installments'))}</td><td>${statusBadge(val(l, 'status', 'status'))}</td><td>${val(l, 'status', 'status') === 'liberada' ? money(val(l, 'total_amount', 'totalAmount')) : '—'}</td><td>${money(val(l, 'paid_total', 'paidTotal') ?? 0)}</td><td>${money((val(l, 'total_amount', 'totalAmount') || 0) - (val(l, 'paid_total', 'paidTotal') ?? 0))}</td></tr>`).join('');
+    }
+    function renderInstallmentsReport(rows) {
+      const tbody = doc.getElementById('installments-report-body');
+      if (!tbody) return;
+      if (!rows?.length) { tbody.innerHTML = '<tr><td colspan="9" class="muted">Nenhuma parcela encontrada.</td></tr>'; return; }
+      tbody.innerHTML = rows.map(i => `<tr><td>${escapeHtml(val(i, 'protocol', 'protocol'))}</td><td>${escapeHtml(i.profiles?.full_name || '—')}</td><td>${escapeHtml(val(i, 'installment_number', 'installmentNumber'))}</td><td>${money(val(i, 'installment_value', 'installmentValue'))}</td><td>${money(val(i, 'paid_amount', 'paidAmount') ?? 0)}</td><td>${money(Math.max((val(i, 'installment_value', 'installmentValue') || 0) - (val(i, 'paid_amount', 'paidAmount') ?? 0), 0))}</td><td>${date(val(i, 'due_date', 'dueDate'))}</td><td>${val(i, 'payment_date', 'paymentDate') ? date(val(i, 'payment_date', 'paymentDate')) : '—'}</td><td>${statusBadge(val(i, 'installment_status', 'installmentStatus') || (val(i, 'paid_amount', 'paidAmount') >= val(i, 'installment_value', 'installmentValue') ? 'paga' : (val(i, 'paid_amount', 'paidAmount') > 0 ? 'parcialmente_paga' : (val(i, 'due_date', 'dueDate') && val(i, 'due_date', 'dueDate') < businessDate() ? 'atrasada' : 'pendente'))))}</td></tr>`).join('');
+    }
+    function renderAuditLog(rows) {
+      const tbody = doc.getElementById('audit-body');
+      if (!tbody) return;
+      if (!rows?.length) { tbody.innerHTML = '<tr><td colspan="8" class="muted">Nenhum registro de auditoria.</td></tr>'; return; }
+      tbody.innerHTML = rows.map(a => `<tr><td>${date(val(a, 'created_at', 'createdAt'))} ${val(a, 'created_at', 'createdAt') ? new Date(val(a, 'created_at', 'createdAt')).toLocaleTimeString('pt-BR') : ''}</td><td>${escapeHtml(val(a, 'operation', 'operation'))}</td><td>${escapeHtml(val(a, 'admin_name', 'adminName') || '—')}</td><td>${escapeHtml(val(a, 'table_name', 'tableName'))}</td><td>${escapeHtml(val(a, 'protocol', 'protocol') || '—')}</td><td>${escapeHtml(val(a, 'old_status', 'oldStatus') || '—')}</td><td>${escapeHtml(val(a, 'new_status', 'newStatus') || '—')}</td><td>${escapeHtml(val(a, 'observation', 'observation') || '—')}</td></tr>`).join('');
+    }
+    function bindReportEvents() {
+      const form = doc.getElementById('f-reports-filters');
+      const btnApply = doc.getElementById('btn-apply-filters');
+      const btnExport = doc.getElementById('btn-export-csv');
+      if (btnApply) btnApply.addEventListener('click', e => { e.preventDefault(); render(); });
+      if (form) form.addEventListener('submit', e => { e.preventDefault(); render(); });
+      if (btnExport) btnExport.addEventListener('click', exportReportsCSV);
+      const preset = doc.getElementById('period-preset');
+      if (preset) preset.addEventListener('change', () => {
+        const today = businessDate();
+        const from = doc.getElementById('date-from');
+        const to = doc.getElementById('date-to');
+        if (preset.value === 'today') { from.value = today; to.value = today; }
+        else if (preset.value === 'week') { from.value = addCalendarDays(today, -7); to.value = today; }
+        else if (preset.value === 'month') { from.value = today.slice(0, 8) + '01'; to.value = today; }
+        else if (preset.value === 'last-month') { const end = addCalendarDays(today.slice(0, 8) + '01', -1); from.value = end.slice(0, 8) + '01'; to.value = end; }
+        else if (preset.value === '30days') { from.value = addCalendarDays(today, -30); to.value = today; }
+      });
+    }
+    function exportReportsCSV() {
+      const loansBody = doc.getElementById('loans-report-body');
+      const instBody = doc.getElementById('installments-report-body');
+      const auditBody = doc.getElementById('audit-body');
+      const rows = [];
+      rows.push('RELATÓRIO DE EMPRÉSTIMOS');
+      rows.push('Protocolo,Cliente,Data solicitação,Valor solicitado,Encargos,Total previsto,Parcelas,Status,Valor liberado,Total recebido,Saldo restante');
+      loansBody?.querySelectorAll('tr').forEach(tr => {
+        const cells = Array.from(tr.querySelectorAll('td,th')).map(td => '"' + td.textContent.replace(/"/g, '""') + '"');
+        if (cells.length) rows.push(cells.join(','));
+      });
+      rows.push('');
+      rows.push('RELATÓRIO DE PARCELAS E PAGAMENTOS');
+      rows.push('Protocolo,Cliente,Parcela,Valor previsto,Valor pago,Saldo,Vencimento,Data pagamento,Situação');
+      instBody?.querySelectorAll('tr').forEach(tr => {
+        const cells = Array.from(tr.querySelectorAll('td,th')).map(td => '"' + td.textContent.replace(/"/g, '""') + '"');
+        if (cells.length) rows.push(cells.join(','));
+      });
+      rows.push('');
+      rows.push('HISTÓRICO DE AUDITORIA');
+      rows.push('Data/hora,Operação,Administrador,Registro,Protocolo,Status anterior,Status novo,Observação');
+      auditBody?.querySelectorAll('tr').forEach(tr => {
+        const cells = Array.from(tr.querySelectorAll('td,th')).map(td => '"' + td.textContent.replace(/"/g, '""') + '"');
+        if (cells.length) rows.push(cells.join(','));
+      });
+      const blob = new Blob(['\uFEFF' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = doc.createElement('a');
+      a.href = url;
+      a.download = `jk-cred-relatorios-${businessDate()}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast('CSV exportado com sucesso.');
+    }
+            }
+          }
+          const goToList = () => { win.location.hash = '#/cliente/solicitacoes'; };
+          if (opened) {
+            win.setTimeout(goToList, 1500);
+          } else {
+            const msgEl = doc.getElementById('form-message');
+            if (msgEl) {
+              const btn = doc.createElement('button');
+              btn.className = 'btn btn-primary btn-block';
+              btn.type = 'button';
+              btn.textContent = 'Ver minhas solicitações';
+              btn.addEventListener('click', goToList);
+              msgEl.appendChild(btn);
+            }
+          }
         }, { form, target: messageTarget, writing: true });
       }
       if (form.id === 'f-pagamento') {
